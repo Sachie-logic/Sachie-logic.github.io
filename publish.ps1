@@ -204,6 +204,76 @@ function Wait-Deploy([string]$Sha, [string]$Owner, [string]$RepoName, [int]$Time
     return [pscustomobject]@{ State = $run.conclusion; Detail = ''; Url = $run.html_url }
 }
 
+function Push-WithRetry {
+    param([int[]]$Waits = @(3, 8, 15))
+    $rebaseTried = $false
+    $attempt = 0
+    while ($true) {
+        $attempt++
+        $pushResult = Invoke-Git @('push', 'origin', $MainBranch)
+        if ($pushResult.Code -eq 0) {
+            return [pscustomobject]@{ Ok = $true; Text = ''; Attempts = $attempt }
+        }
+
+        if (-not $rebaseTried -and $pushResult.Text -match 'non-fast-forward|fetch first|rejected') {
+            $rebaseTried = $true
+            Write-Warn2 '远端有新提交（比如在网页上改过），先同步再重试'
+            $pullResult = Invoke-Git @('pull', '--rebase', '--autostash', 'origin', $MainBranch)
+            if ($pullResult.Code -ne 0) {
+                return [pscustomobject]@{ Ok = $false; Text = ("同步失败，可能有冲突，需要手动处理：`n" + $pullResult.Text); Attempts = $attempt }
+            }
+            continue
+        }
+
+        $reason = ($pushResult.Text -split "`r?`n" | Where-Object { $_ -match 'fatal|error|Could not' } | Select-Object -First 1)
+        if ($attempt -le $Waits.Count) {
+            Write-Warn2 "推送失败（第 $attempt 次）$reason，$($Waits[$attempt - 1]) 秒后重试…"
+            Start-Sleep -Seconds $Waits[$attempt - 1]
+            continue
+        }
+        return [pscustomobject]@{ Ok = $false; Text = $pushResult.Text; Attempts = $attempt }
+    }
+}
+
+function Complete-Deploy {
+    param([string]$ShortSha)
+    $siteUrl = Get-SiteUrl
+    $remote = Get-RemoteInfo
+    $runUrl = ''
+    $state = 'skipped'
+
+    Write-Head '等待部署'
+    if ($NoWait) {
+        Write-Tip '已跳过等待（-NoWait）'
+    } elseif (-not $remote) {
+        Write-Tip '远端不是 github.com 仓库，跳过状态查询'
+    } else {
+        $headSha = (Invoke-Git @('rev-parse', 'HEAD')).Text
+        $result = Wait-Deploy -Sha $headSha -Owner $remote.Owner -RepoName $remote.Repo -TimeoutSeconds 420
+        $runUrl = $result.Url
+        $state = $result.State
+        switch ($state) {
+            'success' { Write-Ok '部署成功，已经上线' }
+            'not-started' { Write-Warn2 '暂时没查到这次的工作流（有时要等几十秒才开始），去 Actions 页面确认一下' }
+            'timeout' { Write-Warn2 '等待超时，去 Actions 页面看进度' }
+            'api-error' {
+                Write-Warn2 "查不到状态：$($result.Detail)"
+                Write-Tip '不影响发布，GitHub 侧仍会继续部署'
+            }
+            default { Write-Fail "部署失败（$state），去 Actions 页面看日志" }
+        }
+    }
+
+    Write-Head '完成'
+    Write-Ok "提交 $ShortSha 已推送"
+    if ($siteUrl) { Write-Tip "站点：$siteUrl" }
+    if ($runUrl) { Write-Tip "运行记录：$runUrl" }
+    Write-Host ''
+
+    if ($state -in @('failure', 'cancelled', 'timed_out', 'startup_failure', 'stale')) { return 1 }
+    return 0
+}
+
 # ============================================================================
 #  开始
 # ============================================================================
@@ -242,6 +312,24 @@ try {
 
     if ($entries.Count -eq 0) {
         Write-Ok '没有需要发布的改动，工作区是干净的。'
+
+        # 上次如果推送失败，本地会留下没推出去的提交 —— 这里补上
+        $aheadCount = 0
+        if (Get-RemoteInfo) {
+            $aheadInfo = Invoke-Git @('rev-list', '--count', 'origin/main..HEAD')
+            if ($aheadInfo.Code -eq 0 -and $aheadInfo.Text -match '^\d+$') { $aheadCount = [int]$aheadInfo.Text }
+        }
+        if ($aheadCount -gt 0) {
+            Write-Warn2 "还有 $aheadCount 个提交没推上去（上次多半是网络失败），现在补推…"
+            $catchUp = Push-WithRetry
+            if (-not $catchUp.Ok) {
+                Stop-WithError "补推失败（试了 $($catchUp.Attempts) 次）：`n$($catchUp.Text)`n等网络好一点再点一次"
+            }
+            Write-Ok '补推成功'
+            $headShort = (Invoke-Git @('rev-parse', '--short', 'HEAD')).Text
+            exit (Complete-Deploy $headShort)
+        }
+
         Write-Tip "线上版本：$(Get-SiteUrl)"
         Write-Host ''
         exit 0
@@ -290,6 +378,38 @@ try {
         }
     }
 
+    # ---- 2.5 先确认能连上 GitHub，连不上就不提交，免得本地堆一堆没推出去的提交 ----
+    $remoteInfo = Get-RemoteInfo
+    if ($remoteInfo -and -not $DryRun) {
+        $probeOk = $false
+        $probe = $null
+        for ($probeTry = 1; $probeTry -le 3; $probeTry++) {
+            Write-Tip "检查 GitHub 连通性（第 $probeTry 次）…"
+            $probe = Invoke-Git @('ls-remote', '--heads', 'origin')
+            if ($probe.Code -eq 0) { $probeOk = $true; break }
+            if ($probeTry -lt 3) {
+                $waitSec = 5 * $probeTry
+                Write-Warn2 "连不上，$waitSec 秒后再试…"
+                Start-Sleep -Seconds $waitSec
+            }
+        }
+        if (-not $probeOk) {
+            Write-Fail '现在连不上 GitHub，这次先不提交（你的改动都还在，没有丢）'
+            foreach ($line in ($probe.Text -split "`r?`n")) {
+                if ($line.Trim() -ne '') { Write-Host "      $line" -ForegroundColor DarkGray }
+            }
+            Write-Host ''
+            Write-Host '这是网络问题（连 github.com:443 超时/被阻断），不是账号也不是配置问题。' -ForegroundColor Yellow
+            Write-Host '等一两分钟再点一次；经常这样，可以给 git 配个代理，或者把远端改成 SSH。' -ForegroundColor Yellow
+            exit 1
+        }
+        Write-Ok 'GitHub 连接正常'
+        $aheadInfo = Invoke-Git @('rev-list', '--count', 'origin/main..HEAD')
+        if ($aheadInfo.Code -eq 0 -and $aheadInfo.Text -match '^\d+$' -and [int]$aheadInfo.Text -gt 0) {
+            Write-Warn2 "本地还有 $($aheadInfo.Text) 个提交没推上去，这次会一起推"
+        }
+    }
+
     # ---- 3. 提交 ----
     if ($Message) { $commitMessage = $Message } else { $commitMessage = New-CommitMessage $entries }
     Write-Head '提交'
@@ -306,71 +426,16 @@ try {
     $shortSha = (Invoke-Git @('rev-parse', '--short', 'HEAD')).Text
     Write-Ok "已提交 $shortSha"
 
-    # ---- 4. 推送 ----
+    # ---- 4. 推送（网络抖动时自动重试几次）----
     Write-Head '推送到 GitHub'
-    $rebaseTried = $false
-    $retryTried = $false
-    while ($true) {
-        $pushResult = Invoke-Git @('push', 'origin', $MainBranch)
-        if ($pushResult.Code -eq 0) { break }
-
-        if (-not $rebaseTried -and $pushResult.Text -match 'non-fast-forward|fetch first|rejected') {
-            $rebaseTried = $true
-            Write-Warn2 '远端有新提交（比如在网页上改过），先同步再重试'
-            $pullResult = Invoke-Git @('pull', '--rebase', '--autostash', 'origin', $MainBranch)
-            if ($pullResult.Code -ne 0) {
-                Stop-WithError "同步失败，可能有冲突，需要手动处理：`n$($pullResult.Text)"
-            }
-            continue
-        }
-
-        if (-not $retryTried) {
-            $retryTried = $true
-            Write-Warn2 '推送失败，3 秒后自动重试一次'
-            Start-Sleep -Seconds 3
-            continue
-        }
-
-        Stop-WithError "推送失败：`n$($pushResult.Text)`n网络恢复后再点一次即可；如果一直失败，在终端执行 git push 看是不是需要重新登录 GitHub"
+    $push = Push-WithRetry
+    if (-not $push.Ok) {
+        Stop-WithError "推送失败（试了 $($push.Attempts) 次）：`n$($push.Text)`n提交已经在本地（$shortSha），网络恢复后再点一次会自动补推"
     }
     Write-Ok '已推送，GitHub Actions 会自动构建并上线'
 
-    # ---- 5. 等部署结果 ----
-    $siteUrl = Get-SiteUrl
-    $remote = Get-RemoteInfo
-    $runUrl = ''
-
-    Write-Head '等待部署'
-    if ($NoWait) {
-        Write-Tip '已跳过等待（-NoWait）'
-    } elseif (-not $remote) {
-        Write-Tip '远端不是 github.com 仓库，跳过状态查询'
-    } else {
-        $sha = (Invoke-Git @('rev-parse', 'HEAD')).Text
-        $result = Wait-Deploy -Sha $sha -Owner $remote.Owner -RepoName $remote.Repo -TimeoutSeconds 420
-        $runUrl = $result.Url
-        switch ($result.State) {
-            'success' { Write-Ok '部署成功，已经上线' }
-            'not-started' { Write-Warn2 '暂时没查到这次的工作流（有时要等几十秒才开始），去 Actions 页面确认一下' }
-            'timeout' { Write-Warn2 '等待超时，去 Actions 页面看进度' }
-            'api-error' {
-                Write-Warn2 "查不到状态：$($result.Detail)"
-                Write-Tip '不影响发布，GitHub 侧仍会继续部署'
-            }
-            default { Write-Fail "部署失败（$($result.State)），去 Actions 页面看日志" }
-        }
-    }
-
-    # ---- 6. 收尾 ----
-    Write-Head '完成'
-    Write-Ok "提交 $shortSha 已推送"
-    if ($siteUrl) { Write-Tip "站点：$siteUrl" }
-    if ($runUrl) { Write-Tip "运行记录：$runUrl" }
-    Write-Host ''
-
-    $failed = ($runUrl -ne '') -and ($result -and $result.State -ne 'success' -and $result.State -notin @('not-started', 'timeout', 'api-error'))
-    if ($failed) { exit 1 }
-    exit 0
+    # ---- 5. 等部署结果 + 收尾 ----
+    exit (Complete-Deploy $shortSha)
 } finally {
     Pop-Location
 }
