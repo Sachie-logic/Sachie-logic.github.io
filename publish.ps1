@@ -308,17 +308,30 @@ try {
 
     # ---- 4. 推送 ----
     Write-Head '推送到 GitHub'
-    $pushResult = Invoke-Git @('push', 'origin', $MainBranch)
-    if ($pushResult.Code -ne 0 -and $pushResult.Text -match 'non-fast-forward|fetch first|rejected') {
-        Write-Warn2 '远端有新提交（比如在网页上改过），先同步再重试'
-        $pullResult = Invoke-Git @('pull', '--rebase', '--autostash', 'origin', $MainBranch)
-        if ($pullResult.Code -ne 0) {
-            Stop-WithError "同步失败，可能有冲突，需要手动处理：`n$($pullResult.Text)"
-        }
+    $rebaseTried = $false
+    $retryTried = $false
+    while ($true) {
         $pushResult = Invoke-Git @('push', 'origin', $MainBranch)
-    }
-    if ($pushResult.Code -ne 0) {
-        Stop-WithError "推送失败：`n$($pushResult.Text)`n检查网络，或在终端执行 git push 看是不是需要登录 GitHub"
+        if ($pushResult.Code -eq 0) { break }
+
+        if (-not $rebaseTried -and $pushResult.Text -match 'non-fast-forward|fetch first|rejected') {
+            $rebaseTried = $true
+            Write-Warn2 '远端有新提交（比如在网页上改过），先同步再重试'
+            $pullResult = Invoke-Git @('pull', '--rebase', '--autostash', 'origin', $MainBranch)
+            if ($pullResult.Code -ne 0) {
+                Stop-WithError "同步失败，可能有冲突，需要手动处理：`n$($pullResult.Text)"
+            }
+            continue
+        }
+
+        if (-not $retryTried) {
+            $retryTried = $true
+            Write-Warn2 '推送失败，3 秒后自动重试一次'
+            Start-Sleep -Seconds 3
+            continue
+        }
+
+        Stop-WithError "推送失败：`n$($pushResult.Text)`n网络恢复后再点一次即可；如果一直失败，在终端执行 git push 看是不是需要重新登录 GitHub"
     }
     Write-Ok '已推送，GitHub Actions 会自动构建并上线'
 
