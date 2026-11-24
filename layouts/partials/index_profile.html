@@ -1,0 +1,68 @@
+{{- /*
+  站点级覆盖：复制自主题 partials/index_profile.html
+
+  只改了一处：头像的 alt 属性置空。
+  原因：主题把 imageTitle 同时用作 alt 和 title。图片一旦加载不出来（比如
+  换了域名、部署路径不对、缓存了旧的 example.org 地址），浏览器就会把 alt
+  文字当正文渲染出来，出现在 <h1> 上方，看起来像一段多余的「Sachie」。
+
+  其余逻辑（尺寸、按钮、社交图标）与主题完全一致。
+  主题升级后若上游修好了，本文件可以删除。
+*/ -}}
+<div class="profile">
+    {{- with site.Params.profileMode }}
+    <div class="profile_inner">
+        {{- if .imageUrl -}}
+        {{- $img := "" }}
+        {{- if not (urls.Parse .imageUrl).IsAbs }}
+            {{- $img = resources.Get .imageUrl }}
+        {{- end }}
+        {{- if $img }}
+            {{- $processableFormats := (slice "jpg" "jpeg" "png" "tif" "bmp" "gif") -}}
+            {{- if hugo.IsExtended -}}
+                {{- $processableFormats = $processableFormats | append "webp" -}}
+            {{- end -}}
+            {{- $prod := (hugo.IsProduction | or (eq site.Params.env "production")) }}
+            {{- if and (in $processableFormats $img.MediaType.SubType) (eq $prod true)}}
+                {{- if (not (and (not .imageHeight) (not .imageWidth))) }}
+                    {{- $img = $img.Resize (printf "%dx%d" .imageWidth .imageHeight) }}
+                {{- else if .imageHeight }}
+                    {{- $img = $img.Resize (printf "x%d" .imageHeight) }}
+                {{ else if .imageWidth }}
+                    {{- $img = $img.Resize (printf "%dx" .imageWidth) }}
+                {{ else }}
+                    {{- $img = $img.Resize "150x150" }}
+                {{- end }}
+            {{- end }}
+            <img draggable="false" src="{{ $img.RelPermalink }}" alt="" title="{{ .imageTitle }}" height="{{ .imageHeight | default 150 }}"
+                width="{{ .imageWidth | default 150 }}" />
+        {{- else }}
+        <img draggable="false" src="{{ .imageUrl | relURL }}" alt="" title="{{ .imageTitle }}" height="{{ .imageHeight | default 150 }}"
+            width="{{ .imageWidth | default 150 }}" />
+        {{- end }}
+        {{- end }}
+        <h1>{{ .title | default site.Title | markdownify }}</h1>
+        <span class="profile-subtitle">{{ .subtitle | markdownify }}</span>
+        {{- partial "social_icons.html" -}}
+
+        {{- with .buttons }}
+        <div class="buttons">
+            {{- range . }}
+            <a class="button" href="{{ trim .url " " }}" rel="noopener" title="{{ .name }}">
+                <span class="button-inner">
+                    {{ .name }}
+                    {{- if (findRE "://" .url) }}&nbsp;
+                    <svg fill="none" shape-rendering="geometricPrecision" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" viewBox="0 0 24 24" height="14" width="14">
+                        <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"></path>
+                        <path d="M15 3h6v6"></path>
+                        <path d="M10 14L21 3"></path>
+                    </svg>
+                    {{- end }}
+                </span>
+            </a>
+            {{- end }}
+        </div>
+        {{- end }}
+    </div>
+    {{- end}}
+</div>

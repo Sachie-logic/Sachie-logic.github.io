@@ -1,0 +1,60 @@
+{{- /*
+  自定义首页模板：个人主页 + 文章列表
+
+  主题的 _default/list.html 里，一旦 profileMode.enabled 为真，首页就只渲染
+  头像区块、不再输出文章列表。这个模板把两者拼在一起：
+
+    [头像] 站名 / 副标题
+    ──────────── 细分隔线
+    [文章卡片] … 按 pagination.pagerSize 分页
+
+  文章卡片与分页的标记直接沿用主题 list.html 的写法，所以样式、封面、
+  meta 行为都和 /posts/ 列表页一致。想改回「只有主页」或「信息卡」，
+  删除本文件即可恢复主题默认行为。
+*/ -}}
+
+{{- define "main" }}
+
+{{- partial "index_profile.html" . }}
+
+{{- $pages := where site.RegularPages "Type" "in" site.Params.mainSections }}
+{{- $pages = where $pages "Params.hiddenInHomeList" "!=" "true" }}
+{{- $paginator := .Paginate $pages }}
+
+<section class="home-posts">
+  {{- range $paginator.Pages }}
+  {{- $isHidden := (.Param "cover.hiddenInList") | default (.Param "cover.hidden") | default false }}
+  <article class="post-entry">
+    {{- partial "cover.html" (dict "cxt" . "IsSingle" false "isHidden" $isHidden) }}
+    <header class="entry-header">
+      <h2 class="entry-hint-parent">{{- .Title }}</h2>
+    </header>
+    {{- if (ne (.Param "hideSummary") true) }}
+    <div class="entry-content">
+      <p>{{ .Summary | plainify | htmlUnescape }}{{ if .Truncated }}...{{ end }}</p>
+    </div>
+    {{- end }}
+    {{- if not (.Param "hideMeta") }}
+    <footer class="entry-footer">
+      {{- partial "post_meta.html" . -}}
+    </footer>
+    {{- end }}
+    <a class="entry-link" aria-label="post link to {{ .Title | plainify }}" href="{{ .Permalink }}"></a>
+  </article>
+  {{- end }}
+</section>
+
+{{- if gt $paginator.TotalPages 1 }}
+<footer class="page-footer">
+  <nav class="pagination">
+    {{- if $paginator.HasPrev }}
+    <a class="prev" href="{{ $paginator.Prev.URL | absURL }}">&laquo;&nbsp;{{ i18n "prev_page" }}&nbsp;{{- if (.Param "ShowPageNums") }}{{ sub $paginator.PageNumber 1 }}/{{ $paginator.TotalPages }}{{- end }}</a>
+    {{- end }}
+    {{- if $paginator.HasNext }}
+    <a class="next" href="{{ $paginator.Next.URL | absURL }}">{{- i18n "next_page" }}&nbsp;{{- if (.Param "ShowPageNums") }}{{ add 1 $paginator.PageNumber }}/{{ $paginator.TotalPages }}{{- end }}&nbsp;&raquo;</a>
+    {{- end }}
+  </nav>
+</footer>
+{{- end }}
+
+{{- end }}

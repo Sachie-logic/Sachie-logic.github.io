@@ -1,0 +1,43 @@
+{{- /*
+  站点级覆盖：修补 PaperMod 与 Hugo 0.170 的不兼容
+
+  1) 原模板用 site.Social.twitter 兜底，Hugo 0.170 已移除 site.Social，
+     构建会报 "can't evaluate field Social"。这里只保留 params.social 的写法。
+  2) 原模板用 partial "partials/templates/_funcs/get-page-images"（多带前缀），
+     新版 Hugo 不再自动纠正，这里改成正确的模板名。
+
+  主题升级后若上游已修好，可删除本文件恢复使用主题自带模板。
+*/ -}}
+{{- if .Params.cover.image -}}
+<meta name="twitter:card" content="summary_large_image" />
+{{- if (ne $.Params.cover.relative true) }}
+<meta name="twitter:image" content="{{ .Params.cover.image | absURL }}" />
+{{- else }}
+<meta name="twitter:image" content="{{ (path.Join .RelPermalink .Params.cover.image ) | absURL }}" />
+{{- end}}
+{{- else }}
+{{- $images := partial "templates/_funcs/get-page-images.html" . -}}
+{{- with index $images 0 -}}
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:image" content="{{ .Permalink }}" />
+{{- else -}}
+<meta name="twitter:card" content="summary"/>
+{{- end -}}
+{{- end }}
+<meta name="twitter:title" content="{{ .Title }}"/>
+<meta name="twitter:description" content="{{ with .Description }}{{ . }}{{ else }}{{if .IsPage}}{{ .Summary }}{{ else }}{{ with site.Params.description }}{{ . }}{{ end }}{{ end }}{{ end -}}"/>
+{{- /* Twitter site handle, from params.social.twitter */}}
+{{- $twitterSite := "" }}
+{{- with site.Params.social }}
+  {{- if reflect.IsMap . }}
+    {{- $twitterSite = .twitter }}
+  {{- end }}
+{{- end }}
+
+{{- with $twitterSite }}
+  {{- $content := . }}
+  {{- if not (strings.HasPrefix . "@") }}
+    {{- $content = printf "@%v" $twitterSite }}
+  {{- end }}
+<meta name="twitter:site" content="{{ $content }}"/>
+{{- end }}

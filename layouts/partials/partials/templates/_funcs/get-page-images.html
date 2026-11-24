@@ -1,0 +1,14 @@
+{{- /*
+  Hugo 0.170 兼容垫片（可以删，但删了构建会报错）
+
+  主题的 opengraph.html / twitter_cards.html / schema_json.html 里，调用本模板时写成了
+      partial "partials/templates/_funcs/get-page-images"
+  多带了一个 "partials/" 前缀。旧版 Hugo 会自动去掉它，新版 Hugo 不再纠正，直接报
+      partial "partials/templates/_funcs/get-page-images" not found
+  所以在站点里放一个同名垫片，把真正的模板结果原样 return 出去。
+
+  注意：必须用 return 转交返回值，不能直接输出，否则数组会被打印成字符串 "[]"。
+  以后升级 PaperMod，若上游已改掉这个前缀，本文件可以删除。
+*/ -}}
+{{- $images := partial "templates/_funcs/get-page-images.html" . -}}
+{{- return $images -}}

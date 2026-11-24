@@ -1,0 +1,96 @@
+# ==============================================================================
+#  站点基础配置  ——  dev/hugo.toml
+#
+#  这里放「站点级」设置：域名、语言、标题、菜单、输出格式等。
+#  主题（PaperMod）的样式与开关全部集中在：
+#      dev/config/_default/params.toml      ← 想调主题就改这个文件
+# ==============================================================================
+
+# TODO ① 换成你自己的域名（末尾必须带斜杠）
+#   本地预览用 http://localhost:1313/ 也可以
+#   部署到 GitHub Pages 项目页时形如 'https://用户名.github.io/仓库名/'
+baseURL = 'https://Sachie-logic.github.io/'
+
+# 站点语言：影响 <html lang>、日期与内置文案（这一行删了页面会变英文）
+locale = 'zh-CN'
+defaultContentLanguage = 'zh'
+
+# 站名：浏览器标签页、页头左上角显示的就是它
+title = "Sachie's blog"
+
+# 主题目录名（themes/hugo-PaperMod）
+theme = 'hugo-PaperMod'
+
+# 生成 robots.txt / 支持 emoji 短代码
+enableRobotsTXT = true
+enableEmoji = true
+
+# 忽略主题里一条无害的告警（模板名多写了 "partials/" 前缀，已用兼容垫片兜住）
+ignoreLogs = ['warning-partial-superfluous-prefix']
+
+# 草稿、未来日期、过期内容是否参与构建
+buildDrafts = false
+buildFuture = false
+buildExpired = false
+
+# 列表页摘要长度（字数）
+summaryLength = 70
+
+# 每页显示多少篇文章
+[pagination]
+  pagerSize = 3
+
+# 输出格式：home 必须包含 JSON，站内搜索才有索引可用
+[outputs]
+  home     = ['HTML', 'RSS', 'JSON']
+  section  = ['HTML', 'RSS']
+  taxonomy = ['HTML', 'RSS']
+  term     = ['HTML', 'RSS']
+
+# 分类与标签（默认就是这样，写出来方便你改）
+[taxonomies]
+  tag      = 'tags'
+  category = 'categories'
+
+# Markdown 渲染
+[markup]
+  # 代码高亮（Chroma），配合 params.toml 里的主题色使用
+  [markup.highlight]
+    noClasses = false
+    lineNos = false
+    guessSyntax = true
+    codeFences = true
+  # 允许在 Markdown 里直接写 HTML
+  [markup.goldmark.renderer]
+    unsafe = true
+  # 文章右侧目录（TOC）抓取的标题层级
+  [markup.tableOfContents]
+    startLevel = 2
+    endLevel = 3
+    ordered = false
+
+# 导航栏菜单：改 name / url / weight 即可
+# 顺序按 weight 从小到大
+[[menu.main]]
+  identifier = 'home'
+  name = '首页'
+  url = '/'
+  weight = 10
+
+[[menu.main]]
+  identifier = 'posts'
+  name = '文章'
+  url = '/posts/'
+  weight = 20
+
+[[menu.main]]
+  identifier = 'search'
+  name = '搜索'
+  url = '/search/'
+  weight = 30
+
+[[menu.main]]
+  identifier = 'about'
+  name = '关于'
+  url = '/about/'
+  weight = 40
