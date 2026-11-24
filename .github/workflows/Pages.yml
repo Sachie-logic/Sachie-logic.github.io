@@ -23,10 +23,11 @@ jobs:
         with:
           submodules: true
       - name: Setup Hugo
-        uses: peaceiris/actions-hugo@v2
+        uses: peaceiris/actions-hugo@v3
         with:
-          hugo-version: latest
-          extended: true
+          # 锁版本：项目里的兼容补丁是按 0.170.x 写的，不要在 CI 里追 latest
+          hugo-version: '0.170.1'
+          extended: false
       - name: Build
         run: hugo --gc --minify --baseURL "https://sachie-logic.github.io/"
       - name: Upload artifact

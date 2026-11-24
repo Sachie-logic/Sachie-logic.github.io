@@ -3,6 +3,9 @@ public/
 resources/_gen/
 .hugo_build.lock
 
+# Hugo 可执行文件（92MB，不该进仓库；CI 会自己装 Hugo）
+hugo.exe
+
 # 系统垃圾文件
 .DS_Store
 Thumbs.db

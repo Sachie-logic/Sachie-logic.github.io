@@ -9,7 +9,7 @@
 # TODO ① 换成你自己的域名（末尾必须带斜杠）
 #   本地预览用 http://localhost:1313/ 也可以
 #   部署到 GitHub Pages 项目页时形如 'https://用户名.github.io/仓库名/'
-baseURL = 'https://Sachie-logic.github.io/'
+baseURL = 'https://sachie-logic.github.io/'
 
 # 站点语言：影响 <html lang>、日期与内置文案（这一行删了页面会变英文）
 locale = 'zh-CN'
