@@ -29,7 +29,7 @@ Sachie｜さちえ
 
 ## 联系方式
 
-把下面的示例换成你自己的：
+
 
 - 邮箱：sachie_logic@163.com
 - GitHub：https://github.com/Sachie-logic
